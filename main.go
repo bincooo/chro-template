@@ -14,13 +14,13 @@ const (
 
 func examples(ctx context.Context) (err error) {
 	logger.InitLogger("log", logrus.InfoLevel)
-	ctx, cancel := InitChromium(ctx, userAgent)
+	ctx, cancel := InitChromium(ctx, userAgent, true)
 	defer cancel()
 
 	// 进入主页
 	err = chromedp.Run(ctx,
-		chromedp.Navigate(`https://you.com`),
-		whileTimeout(180*time.Second, 5*time.Second, false, chromedp.WaitVisible("#login-button")),
+		chromedp.Navigate("https://you.com"),
+		whileTimeout(120*time.Second, 5*time.Second, true, chromedp.WaitVisible("#login-button")),
 		taskLogger("执行结束"),
 	)
 	if err != nil {

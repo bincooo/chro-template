@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-func InitChromium(ctx context.Context, userAgent string) (context.Context, context.CancelFunc) {
+func InitChromium(ctx context.Context, userAgent string, headless bool) (context.Context, context.CancelFunc) {
 	path := filepath.Join("plugins/nopecha")
 	opts := []chromedp.ExecAllocatorOption{
 		//chromedp.DisableGPU,
-		chromedp.Flag("headless", false), // 设置为false，就是不使用无头模式
+		chromedp.Flag("headless", headless), // 设置为false，就是不使用无头模式
 		// 本地代理
 		chromedp.ProxyServer("http://127.0.0.1:7890"),
 		//chromedp.Flag("proxy-bypass-list", "<-loopback>"),
