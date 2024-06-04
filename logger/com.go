@@ -15,16 +15,11 @@ import (
 )
 
 var (
+	project    = ""
 	projectDir = ""
 )
 
 func InitLogger(basePath string, level logrus.Level) {
-	dir, err := os.Getwd()
-	if err != nil {
-		Fatal(err)
-	}
-	projectDir = dir + "/"
-
 	logrus.SetLevel(level)
 	if len(basePath) == 0 {
 		basePath = "log"
@@ -76,6 +71,13 @@ func CustomCallerFormatter(frame *runtime.Frame) string {
 		return prefix
 	}
 
+	trimProject := func(file string) string {
+		if !strings.HasPrefix(file, project+"/") {
+			return file
+		}
+		return file[len(project)+1:]
+	}
+
 	// 尝试获取上层栈
 	pcs := make([]uintptr, 10)
 	depth := runtime.Callers(10, pcs)
@@ -92,7 +94,7 @@ func CustomCallerFormatter(frame *runtime.Frame) string {
 	main := strings.HasPrefix(frame.Function, "main.")
 	slice := strings.Split(frame.File, trimPackage(path.Dir(frame.Function)))
 	if !main && len(slice) > 1 {
-		return " <" + path.Dir(frame.Function) + "> " + trimL(slice[1]) + ":" + strconv.Itoa(frame.Line) + " |"
+		return " <" + trimProject(path.Dir(frame.Function)) + "> " + trimL(slice[1]) + ":" + strconv.Itoa(frame.Line) + " |"
 	}
 
 	root := path.Dir(frame.Function)
@@ -101,11 +103,19 @@ func CustomCallerFormatter(frame *runtime.Frame) string {
 	}
 
 	file := frame.File
-	if strings.HasPrefix(file, projectDir) {
-		file = file[len(projectDir):]
+	if strings.HasPrefix(file, projectDir+"/") {
+		file = file[len(projectDir)+1:]
 	}
 
-	return " <" + root + "> " + file + ":" + strconv.Itoa(frame.Line) + " |"
+	return " <" + trimProject(root) + "> " + file + ":" + strconv.Itoa(frame.Line) + " |"
+}
+
+func Trace(args ...interface{}) {
+	logrus.Trace(args...)
+}
+
+func Tracef(format string, args ...interface{}) {
+	logrus.Tracef(format, args...)
 }
 
 func Debug(args ...interface{}) {
