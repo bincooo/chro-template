@@ -4,8 +4,11 @@ import (
 	"chro-template/common"
 	"chro-template/logger"
 	"context"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
+	"slices"
 	"time"
 )
 
@@ -16,21 +19,58 @@ const (
 func examples(ctx context.Context) (err error) {
 	common.InitCommon()
 	logger.InitLogger("log", logrus.InfoLevel)
-	ctx, cancel := InitChromium(ctx, userAgent, false)
+	ctx, cancel := InitChromium(ctx, userAgent, "new")
 	defer cancel()
 
 	// 进入主页
 	err = chromedp.Run(ctx,
+		stealth(),
 		chromedp.Navigate("https://you.com"),
-		whileTimeout(120*time.Second, 5*time.Second, true, chromedp.WaitVisible("#login-button")),
+		//chromedp.Navigate("https://bot.sannysoft.com"),
+		whileTimeout(100*time.Second, 3*time.Second, true, chromedp.WaitVisible("#login-button")),
 		taskLogger("执行结束"),
 	)
 	if err != nil {
 		_ = chromedp.Run(ctx, screenshot(nil))
+		logger.Error(err)
 		return
 	}
 
+	keys := []string{
+		"cf_clearance",
+		"_cfuvid",
+		"__cf_bm",
+	}
+	err = chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) (err error) {
+		cookies, err := network.GetCookies().Do(ctx)
+		if err != nil {
+			return err
+		}
+		var str string
+		for _, cookie := range cookies {
+			if slices.Contains(keys, cookie.Name) {
+				str += cookie.Name + "=" + cookie.Value + "; "
+			}
+		}
+		logger.Info(str)
+		return nil
+	}))
+	if err != nil {
+		logger.Error(err)
+	}
 	return
+}
+
+func stealth() chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		identifier, err := page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
+		if err != nil {
+			return err
+		}
+
+		logger.Infof("stealth: %s", identifier)
+		return
+	}
 }
 
 func main() {

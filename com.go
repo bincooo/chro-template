@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func InitChromium(ctx context.Context, userAgent string, headless bool) (context.Context, context.CancelFunc) {
+func InitChromium(ctx context.Context, userAgent string, headless string) (context.Context, context.CancelFunc) {
 	path := filepath.Join("plugins/nopecha")
 	opts := []chromedp.ExecAllocatorOption{
 		//chromedp.DisableGPU,
@@ -28,6 +28,14 @@ func InitChromium(ctx context.Context, userAgent string, headless bool) (context
 		chromedp.UserAgent(userAgent),
 		// 浏览器启动路径
 		//chromedp.ExecPath("/usr/bin/microsoft-edge"),
+
+		// 用户目录
+		//chromedp.UserDataDir("./user-dir"),
+
+		// 窗口大小
+		//chromedp.WindowSize(800, 600),
+
+		chromedp.NoFirstRun,
 	}
 
 	opts = append(chromedp.DefaultExecAllocatorOptions[:], opts...)
