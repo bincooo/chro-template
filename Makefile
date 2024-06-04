@@ -9,7 +9,7 @@ TARGET_EXEC := server
 
 all: clean setup build-linux build-osx build-windows copy
 
-# goland 中 go tool arguments 添加 echo 输出的命令参数
+# goland 中 go tool arguments 添加 echo 输出的命令参数, 需删除 -w
 echo:
 	@echo '${LDFLAGS}'
 
