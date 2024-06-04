@@ -5,7 +5,6 @@ import (
 	"chro-template/logger"
 	"context"
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
 	"slices"
@@ -24,7 +23,7 @@ func examples(ctx context.Context) (err error) {
 
 	// 进入主页
 	err = chromedp.Run(ctx,
-		stealth(),
+		evaluateStealth(),
 		chromedp.Navigate("https://you.com"),
 		//chromedp.Navigate("https://bot.sannysoft.com"),
 		whileTimeout(100*time.Second, 3*time.Second, true, chromedp.WaitVisible("#login-button")),
@@ -59,18 +58,6 @@ func examples(ctx context.Context) (err error) {
 		logger.Error(err)
 	}
 	return
-}
-
-func stealth() chromedp.ActionFunc {
-	return func(ctx context.Context) (err error) {
-		identifier, err := page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
-		if err != nil {
-			return err
-		}
-
-		logger.Infof("stealth: %s", identifier)
-		return
-	}
 }
 
 func main() {

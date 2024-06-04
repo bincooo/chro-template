@@ -3,6 +3,7 @@ package main
 import (
 	"chro-template/logger"
 	"context"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/google/uuid"
 	"os"
@@ -98,6 +99,13 @@ func withTimeout(timeout time.Duration, returnError bool, actions ...chromedp.Ac
 		if !returnError {
 			return nil
 		}
+		return
+	}
+}
+
+func evaluateStealth() chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		_, err = page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
 		return
 	}
 }
