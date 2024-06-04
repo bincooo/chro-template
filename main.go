@@ -1,6 +1,7 @@
 package main
 
 import (
+	"chro-template/common"
 	"chro-template/logger"
 	"context"
 	"github.com/chromedp/chromedp"
@@ -13,6 +14,7 @@ const (
 )
 
 func examples(ctx context.Context) (err error) {
+	common.InitCommon()
 	logger.InitLogger("log", logrus.InfoLevel)
 	ctx, cancel := InitChromium(ctx, userAgent, true)
 	defer cancel()
