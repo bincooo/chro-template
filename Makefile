@@ -11,7 +11,7 @@ all: clean setup build-linux build-osx build-windows copy
 
 # goland 中 go tool arguments 添加 echo 输出的命令参数
 echo:
-	@echo ${LDFLAGS}
+	@echo '${LDFLAGS}'
 
 clean:
 	rm -rf bin

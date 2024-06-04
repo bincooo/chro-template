@@ -16,7 +16,7 @@ const (
 func examples(ctx context.Context) (err error) {
 	common.InitCommon()
 	logger.InitLogger("log", logrus.InfoLevel)
-	ctx, cancel := InitChromium(ctx, userAgent, true)
+	ctx, cancel := InitChromium(ctx, userAgent, false)
 	defer cancel()
 
 	// 进入主页
