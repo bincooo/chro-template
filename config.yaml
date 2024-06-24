@@ -1,0 +1,4 @@
+serverless:
+  disabled-gpu: false
+  proxy-bypass-list:
+    - '127.0.0.1'

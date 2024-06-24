@@ -12,13 +12,14 @@ import (
 )
 
 const (
+	proxies   = ""
 	userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
 )
 
 func examples(ctx context.Context) (err error) {
 	common.InitCommon()
 	logger.InitLogger("log", logrus.InfoLevel)
-	ctx, cancel := InitChromium(ctx, userAgent, "new")
+	ctx, cancel := InitChromium(ctx, proxies, userAgent)
 	defer cancel()
 
 	// 进入主页
