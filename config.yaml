@@ -1,0 +1,6 @@
+serverless:
+  #execPath: /usr/bin/microsoft-edge
+  disabled-gpu: true
+  proxies: http://127.0.0.1:7890
+  extension: plugins
+  headless: false

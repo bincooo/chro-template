@@ -1,33 +1,92 @@
-package main
+package helper
 
 import (
-	"chro-template/logger"
+	_ "embed"
+
+	"archive/zip"
+	"bytes"
 	"context"
+	"errors"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/google/uuid"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"you-helper/config"
+	"you-helper/logger"
 )
 
-func InitChromium(ctx context.Context, userAgent string, headless bool) (context.Context, context.CancelFunc) {
-	path := filepath.Join("plugins/nopecha")
+var (
+
+	//go:embed plugins/nopecha.1
+	nopecha []byte
+)
+
+func switchPlugin(expr string) []byte {
+	switch expr {
+	case "nopecha":
+		return nopecha
+		// more ...
+	default:
+		return nil
+	}
+}
+
+func InitChromium(ctx context.Context, proxies, userAgent string) (context.Context, context.CancelFunc) {
 	opts := []chromedp.ExecAllocatorOption{
-		//chromedp.DisableGPU,
-		chromedp.Flag("headless", headless), // 设置为false，就是不使用无头模式
-		// 本地代理
-		chromedp.ProxyServer("http://127.0.0.1:7890"),
-		//chromedp.Flag("proxy-bypass-list", "<-loopback>"),
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		// 插件装载
-		chromedp.Flag("disable-extensions-except", path),
-		chromedp.Flag("disable-extensions", false),
-		chromedp.Flag("load-extension", path),
+
 		// UA
 		chromedp.UserAgent(userAgent),
-		// 浏览器启动路径
-		//chromedp.ExecPath("/usr/bin/microsoft-edge"),
+
+		// 用户目录
+		//chromedp.UserDataDir("./user-dir"),
+
+		// 窗口大小
+		//chromedp.WindowSize(800, 600),
+
+		chromedp.NoFirstRun,
+	}
+
+	// 本地代理
+	if proxies != "" {
+		opts = append(opts, chromedp.ProxyServer(proxies))
+	}
+
+	headless := config.Config.GetString("serverless.headless")
+	if headless != "" {
+		// 设置为false，就是不使用无头模式
+		switch headless {
+		case "new":
+			opts = append(opts, chromedp.Flag("headless", headless))
+		case "true":
+			opts = append(opts, chromedp.Flag("headless", true))
+		case "false":
+			opts = append(opts, chromedp.Flag("headless", false))
+		}
+	}
+
+	// 关闭GPU加速
+	if config.Config.GetBool("serverless.disabled-gpu") {
+		opts = append(opts, chromedp.DisableGPU)
+	}
+
+	// 代理ip白名单
+	if list := config.Config.GetStringSlice(""); len(list) > 0 {
+		opts = append(opts, chromedp.Flag("serverless.proxy-bypass-list", strings.Join(list, ",")))
+	}
+
+	// 插件装载
+	opts = append(opts, InitExtensions("nopecha")...)
+
+	// 浏览器启动路径
+	if p := config.Config.GetString("serverless.execPath"); p != "" {
+		opts = append(opts, chromedp.ExecPath(p))
 	}
 
 	opts = append(chromedp.DefaultExecAllocatorOptions[:], opts...)
@@ -41,6 +100,122 @@ func InitChromium(ctx context.Context, userAgent string, headless bool) (context
 	)
 
 	return ctx, cancel
+}
+
+func InitExtensions(plugins ...string) []chromedp.ExecAllocatorOption {
+	if len(plugins) == 0 {
+		return nil
+	}
+
+	dir := config.Config.GetString("serverless.extension")
+	if dir == "" {
+		dir = "/var/tmp/extension-plugins"
+	}
+
+	if !exists(dir) {
+		_ = os.MkdirAll(dir, 0744)
+	}
+
+	var paths []string
+	for _, plugin := range plugins {
+		path := filepath.Join(dir, plugin)
+		pluginBytes := switchPlugin(plugin)
+
+		if exists(path) {
+			paths = append(paths, path)
+			continue
+		}
+
+		if err := fix(pluginBytes); err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		unzip, err := newZipReader(pluginBytes)
+		if err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		if err = unzipToDir(unzip, dir); err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		paths = append(paths, path)
+	}
+
+	return []chromedp.ExecAllocatorOption{
+		chromedp.Flag("disable-extensions-except", strings.Join(paths, ",")),
+		chromedp.Flag("load-extension", strings.Join(paths, ",")),
+		chromedp.Flag("disable-extensions", false),
+	}
+}
+
+func unzipToDir(zr *zip.Reader, folder string) error {
+	// 遍历 zr ，将文件写入到磁盘
+	for _, file := range zr.File {
+		path := filepath.Join(folder, file.Name)
+
+		// 如果是目录，就创建目录
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(path, file.Mode()); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// 获取到 Reader
+		fr, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		if strings.Contains(path, "/__MACOSX/") {
+			continue
+		}
+
+		if strings.Contains(path, "manifest.fingerprint") {
+			continue
+		}
+
+		// 创建要写出的文件对应的 Write
+		fw, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(fw, fr)
+		if err != nil {
+			return err
+		}
+
+		_ = fw.Close()
+		_ = fr.Close()
+	}
+
+	return nil
+}
+
+func newZipReader(pluginBytes []byte) (*zip.Reader, error) {
+	return zip.NewReader(bytes.NewReader(pluginBytes), int64(len(pluginBytes)))
+}
+
+func fix(pluginBytes []byte) error {
+	if len(pluginBytes) <= 8 {
+		return errors.New("plugin bytes too short")
+	}
+	if bytes.Equal(pluginBytes[:8], []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}) {
+		pluginBytes[0] = 0x50
+		pluginBytes[0] = 0x4B
+		pluginBytes[0] = 0x03
+		pluginBytes[0] = 0x04
+		pluginBytes[0] = 0x14
+		pluginBytes[0] = 0x00
+		pluginBytes[0] = 0x00
+		pluginBytes[0] = 0x00
+	}
+	return nil
 }
 
 func taskLogger(message string) chromedp.Tasks {
@@ -73,6 +248,7 @@ func whileTimeout(timeout time.Duration, roundTimeout time.Duration, returnError
 					return nil
 				}
 				cancel()
+				time.Sleep(time.Second)
 			}
 		}
 	}
@@ -90,6 +266,51 @@ func withTimeout(timeout time.Duration, returnError bool, actions ...chromedp.Ac
 		if !returnError {
 			return nil
 		}
+		return
+	}
+}
+
+func visible(selector string) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			obj, exp, err := runtime.Evaluate("document.querySelector('" + selector + "')").Do(ctx)
+			if err != nil {
+				return err
+			}
+			if exp != nil {
+				return exp
+			}
+
+			if obj.ObjectID == "" {
+				return errors.New("not visible")
+			}
+			return nil
+		}),
+	}
+}
+
+func notVisible(selector string) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			obj, exp, err := runtime.Evaluate("document.querySelector('" + selector + "')").Do(ctx)
+			if err != nil {
+				return err
+			}
+			if exp != nil {
+				return exp
+			}
+
+			if obj.ObjectID != "" {
+				return errors.New("visible")
+			}
+			return nil
+		}),
+	}
+}
+
+func evaluateStealth() chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		_, err = page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
 		return
 	}
 }
@@ -122,5 +343,5 @@ func screenshot(result chan string) chromedp.ActionFunc {
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
-	return os.IsExist(err)
+	return err == nil || os.IsExist(err)
 }
