@@ -16,9 +16,9 @@ var (
 	proxies  = ""
 
 	cmd = &cobra.Command{
-		Short:   "GIN 模版",
-		Long:    "项目地址：https://github.com/xxx/you-helper",
-		Use:     "you-helper",
+		Short:   "chrome 自动化模版",
+		Long:    "项目地址：https://github.com/bincooo/chro-template",
+		Use:     "chro-template",
 		Version: version,
 		Run: func(cmd *cobra.Command, args []string) {
 			common.InitCommon()
