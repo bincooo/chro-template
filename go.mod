@@ -1,4 +1,4 @@
-module you-helper
+module chro-template
 
 go 1.21.6
 

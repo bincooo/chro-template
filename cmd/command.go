@@ -1,11 +1,11 @@
 package main
 
 import (
+	"chro-template/common"
+	"chro-template/gin.router"
+	"chro-template/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"you-helper/common"
-	"you-helper/gin.router"
-	"you-helper/logger"
 )
 
 var (

@@ -1,16 +1,14 @@
 package router
 
 import (
-	"context"
+	helper "chro-template"
+	"chro-template/logger"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
-	"time"
-	helper "you-helper"
-	"you-helper/logger"
 )
 
 func Bind(port int, p string) {
@@ -20,8 +18,11 @@ func Bind(port int, p string) {
 	route.Use(cros)
 	route.Use(panicError)
 	route.Use(proxies(p))
-	route.GET("/register", register)
-	route.GET("/clearance", clearance)
+	route.GET("/demo", func(c *gin.Context) {
+		if err := helper.Examples(c.Request.Context()); err != nil {
+			logger.Fatal(err)
+		}
+	})
 	route.Static("tmp", "tmp")
 	addr := ":" + strconv.Itoa(port)
 	logger.Infof("server start by http://0.0.0.0%s", addr)
@@ -34,58 +35,6 @@ func proxies(p string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("proxies", p)
 	}
-}
-
-func clearance(ctx *gin.Context) {
-	timeout, cancel := context.WithTimeout(ctx.Request.Context(), 180*time.Second)
-	defer cancel()
-
-	cookies, lang, err := helper.Clearance(timeout, ctx.GetString("proxies"))
-	if err != nil {
-		ctx.JSON(500, gin.H{
-			"ok":  false,
-			"msg": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(200, gin.H{
-		"ok":  true,
-		"msg": "success",
-		"data": gin.H{
-			"lang":      lang,
-			"userAgent": helper.UserAgent,
-			"cookie":    cookies,
-		},
-	})
-}
-
-func register(ctx *gin.Context) {
-	timeout, cancel := context.WithTimeout(ctx.Request.Context(), 120*time.Second)
-	defer cancel()
-
-	authorization := ctx.Request.Header.Get("Authorization")
-	if authorization != "114514" {
-		ctx.JSON(200, gin.H{
-			"ok":  true,
-			"msg": "success",
-		})
-		return
-	}
-
-	cookies, err := helper.Register(timeout, ctx.GetString("proxies"))
-	if err != nil {
-		ctx.JSON(500, gin.H{
-			"ok":  false,
-			"msg": err.Error(),
-		})
-		return
-	}
-	ctx.JSON(200, gin.H{
-		"ok":   true,
-		"msg":  "success",
-		"data": cookies,
-	})
 }
 
 func cros(context *gin.Context) {

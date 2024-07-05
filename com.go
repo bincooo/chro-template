@@ -2,9 +2,12 @@ package helper
 
 import (
 	_ "embed"
+	"github.com/chromedp/cdproto/cdp"
 
 	"archive/zip"
 	"bytes"
+	"chro-template/config"
+	"chro-template/logger"
 	"context"
 	"errors"
 	"github.com/chromedp/cdproto/page"
@@ -16,8 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"you-helper/config"
-	"you-helper/logger"
+
+	rt "runtime"
 )
 
 var (
@@ -308,10 +311,64 @@ func notVisible(selector string) chromedp.Tasks {
 	}
 }
 
+func clickXY(ctx context.Context, selector string, offset struct{ x, y float64 }) (err error) {
+	var (
+		iframe  *cdp.Node
+		iframes []*cdp.Node
+
+		rect map[string]interface{}
+	)
+
+	err = chromedp.Run(ctx, chromedp.Nodes("iframe", &iframes, chromedp.ByQuery))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	if len(iframes) == 0 {
+		return errors.New("not iframe nodes")
+	}
+
+	iframe = iframes[0]
+	logger.Info(iframe.Attribute("src"))
+
+	if selector == "" {
+		selector = "body"
+	}
+	err = chromedp.Run(ctx, chromedp.Evaluate("{let {x,y} = document.querySelector(`"+selector+"`).getBoundingClientRect(); let a={x,y}; a;}", &rect))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	err = chromedp.Run(ctx, chromedp.MouseClickXY(rect["x"].(float64)+offset.x, rect["y"].(float64)+offset.y))
+	if err != nil {
+		logger.Error(err)
+	}
+
+	if err == nil {
+		err = errors.New("trying to click XY")
+	}
+	return
+}
+
 func evaluateStealth() chromedp.ActionFunc {
 	return func(ctx context.Context) (err error) {
 		_, err = page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
 		return
+	}
+}
+
+func osUserAgent() string {
+	switch rt.GOOS {
+	case "linux":
+		return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	case "darwin":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	case "windows":
+		return "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	default:
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
 	}
 }
 

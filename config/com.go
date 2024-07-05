@@ -2,9 +2,9 @@ package config
 
 import (
 	"bytes"
+	"chro-template/common"
 	"github.com/spf13/viper"
 	"os"
-	"you-helper/common"
 )
 
 var (
