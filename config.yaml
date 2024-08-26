@@ -1,4 +1,8 @@
 browser-less:
+  #execPath: /usr/bin/microsoft-edge
   disabled-gpu: false
+  proxies: http://127.0.0.1:7890
+  extension: plugins
+  headless: false
   proxy-bypass-list:
     - '127.0.0.1'

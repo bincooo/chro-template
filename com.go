@@ -1,12 +1,17 @@
-package main
+package helper
 
 import (
+	_ "embed"
+	"github.com/chromedp/cdproto/cdp"
+
 	"archive/zip"
 	"bytes"
 	"chro-template/config"
 	"chro-template/logger"
 	"context"
+	"errors"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/google/uuid"
 	"io"
@@ -14,7 +19,25 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	rt "runtime"
 )
+
+var (
+
+	//go:embed plugins/nopecha.1
+	nopecha []byte
+)
+
+func switchPlugin(expr string) []byte {
+	switch expr {
+	case "nopecha":
+		return nopecha
+		// more ...
+	default:
+		return nil
+	}
+}
 
 func InitChromium(ctx context.Context, proxies, userAgent string) (context.Context, context.CancelFunc) {
 	opts := []chromedp.ExecAllocatorOption{
@@ -23,8 +46,6 @@ func InitChromium(ctx context.Context, proxies, userAgent string) (context.Conte
 
 		// UA
 		chromedp.UserAgent(userAgent),
-		// 浏览器启动路径
-		//chromedp.ExecPath("/usr/bin/microsoft-edge"),
 
 		// 用户目录
 		//chromedp.UserDataDir("./user-dir"),
@@ -66,6 +87,11 @@ func InitChromium(ctx context.Context, proxies, userAgent string) (context.Conte
 	// 插件装载
 	opts = append(opts, InitExtensions("nopecha")...)
 
+	// 浏览器启动路径
+	if p := config.Config.GetString("serverless.execPath"); p != "" {
+		opts = append(opts, chromedp.ExecPath(p))
+	}
+
 	opts = append(chromedp.DefaultExecAllocatorOptions[:], opts...)
 	chromiumCtx, _ := chromedp.NewExecAllocator(ctx, opts...)
 
@@ -96,32 +122,26 @@ func InitExtensions(plugins ...string) []chromedp.ExecAllocatorOption {
 	var paths []string
 	for _, plugin := range plugins {
 		path := filepath.Join(dir, plugin)
-		if !exists("plugins/" + plugin + ".1") {
+		pluginBytes := switchPlugin(plugin)
+
+		if exists(path) {
+			paths = append(paths, path)
 			continue
 		}
 
-		f, err := os.Open("plugins/" + plugin + ".1")
+		if err := fix(pluginBytes); err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		unzip, err := newZipReader(pluginBytes)
 		if err != nil {
 			logger.Error(err)
-			continue
-		}
-
-		if err = fix(f); err != nil {
-			logger.Error(err)
-			_ = f.Close()
-			continue
-		}
-
-		unzip, err := newZipReader(f)
-		if err != nil {
-			logger.Error(err)
-			_ = f.Close()
 			continue
 		}
 
 		if err = unzipToDir(unzip, dir); err != nil {
 			logger.Error(err)
-			_ = f.Close()
 			continue
 		}
 
@@ -158,6 +178,10 @@ func unzipToDir(zr *zip.Reader, folder string) error {
 			continue
 		}
 
+		if strings.Contains(path, "manifest.fingerprint") {
+			continue
+		}
+
 		// 创建要写出的文件对应的 Write
 		fw, err := os.Create(path)
 		if err != nil {
@@ -176,29 +200,24 @@ func unzipToDir(zr *zip.Reader, folder string) error {
 	return nil
 }
 
-func newZipReader(f *os.File) (*zip.Reader, error) {
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	return zip.NewReader(f, fi.Size())
+func newZipReader(pluginBytes []byte) (*zip.Reader, error) {
+	return zip.NewReader(bytes.NewReader(pluginBytes), int64(len(pluginBytes)))
 }
 
-func fix(f *os.File) error {
-	magic := make([]byte, 8)
-	n, err := f.Read(magic)
-	if err != nil {
-		return err
+func fix(pluginBytes []byte) error {
+	if len(pluginBytes) <= 8 {
+		return errors.New("plugin bytes too short")
 	}
-
-	if n > 8 && bytes.Equal(magic, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}) {
-		n, err = f.Write([]byte{0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00})
-		if err != nil {
-			return err
-		}
+	if bytes.Equal(pluginBytes[:8], []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}) {
+		pluginBytes[0] = 0x50
+		pluginBytes[0] = 0x4B
+		pluginBytes[0] = 0x03
+		pluginBytes[0] = 0x04
+		pluginBytes[0] = 0x14
+		pluginBytes[0] = 0x00
+		pluginBytes[0] = 0x00
+		pluginBytes[0] = 0x00
 	}
-
 	return nil
 }
 
@@ -232,6 +251,7 @@ func whileTimeout(timeout time.Duration, roundTimeout time.Duration, returnError
 					return nil
 				}
 				cancel()
+				time.Sleep(time.Second)
 			}
 		}
 	}
@@ -253,10 +273,102 @@ func withTimeout(timeout time.Duration, returnError bool, actions ...chromedp.Ac
 	}
 }
 
+func visible(selector string) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			obj, exp, err := runtime.Evaluate("document.querySelector('" + selector + "')").Do(ctx)
+			if err != nil {
+				return err
+			}
+			if exp != nil {
+				return exp
+			}
+
+			if obj.ObjectID == "" {
+				return errors.New("not visible")
+			}
+			return nil
+		}),
+	}
+}
+
+func notVisible(selector string) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			obj, exp, err := runtime.Evaluate("document.querySelector('" + selector + "')").Do(ctx)
+			if err != nil {
+				return err
+			}
+			if exp != nil {
+				return exp
+			}
+
+			if obj.ObjectID != "" {
+				return errors.New("visible")
+			}
+			return nil
+		}),
+	}
+}
+
+func clickXY(ctx context.Context, selector string, offset struct{ x, y float64 }) (err error) {
+	var (
+		iframe  *cdp.Node
+		iframes []*cdp.Node
+
+		rect map[string]interface{}
+	)
+
+	err = chromedp.Run(ctx, chromedp.Nodes("iframe", &iframes, chromedp.ByQuery))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	if len(iframes) == 0 {
+		return errors.New("not iframe nodes")
+	}
+
+	iframe = iframes[0]
+	logger.Info(iframe.Attribute("src"))
+
+	if selector == "" {
+		selector = "body"
+	}
+	err = chromedp.Run(ctx, chromedp.Evaluate("{let {x,y} = document.querySelector(`"+selector+"`).getBoundingClientRect(); let a={x,y}; a;}", &rect))
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	err = chromedp.Run(ctx, chromedp.MouseClickXY(rect["x"].(float64)+offset.x, rect["y"].(float64)+offset.y))
+	if err != nil {
+		logger.Error(err)
+	}
+
+	if err == nil {
+		err = errors.New("trying to click XY")
+	}
+	return
+}
+
 func evaluateStealth() chromedp.ActionFunc {
 	return func(ctx context.Context) (err error) {
 		_, err = page.AddScriptToEvaluateOnNewDocument(stealthJs).Do(ctx)
 		return
+	}
+}
+
+func osUserAgent() string {
+	switch rt.GOOS {
+	case "linux":
+		return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	case "darwin":
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	case "windows":
+		return "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
+	default:
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
 	}
 }
 
@@ -288,5 +400,5 @@ func screenshot(result chan string) chromedp.ActionFunc {
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
-	return os.IsExist(err)
+	return err == nil || os.IsExist(err)
 }

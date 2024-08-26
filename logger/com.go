@@ -26,7 +26,7 @@ func InitLogger(basePath string, level logrus.Level) {
 	}
 
 	writer, err := rotatelogs.New(
-		filepath.Join(basePath, "background-%Y-%m-%d.log"),
+		filepath.Join(basePath, "helper-%Y-%m-%d.log"),
 		//日志最大保存时间
 		rotatelogs.WithMaxAge(7*24*time.Hour),
 		////设置日志切割时间间隔(1天)(隔多久分割一次)
