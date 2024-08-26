@@ -40,7 +40,7 @@ func InitChromium(ctx context.Context, proxies, userAgent string) (context.Conte
 		opts = append(opts, chromedp.ProxyServer(proxies))
 	}
 
-	headless := config.Config.GetString("serverless.headless")
+	headless := config.Config.GetString("browser-less.headless")
 	if headless != "" {
 		// 设置为false，就是不使用无头模式
 		switch headless {
@@ -54,13 +54,13 @@ func InitChromium(ctx context.Context, proxies, userAgent string) (context.Conte
 	}
 
 	// 关闭GPU加速
-	if config.Config.GetBool("serverless.disabled-gpu") {
+	if config.Config.GetBool("browser-less.disabled-gpu") {
 		opts = append(opts, chromedp.DisableGPU)
 	}
 
 	// 代理ip白名单
 	if list := config.Config.GetStringSlice(""); len(list) > 0 {
-		opts = append(opts, chromedp.Flag("serverless.proxy-bypass-list", strings.Join(list, ",")))
+		opts = append(opts, chromedp.Flag("browser-less.proxy-bypass-list", strings.Join(list, ",")))
 	}
 
 	// 插件装载
@@ -84,7 +84,7 @@ func InitExtensions(plugins ...string) []chromedp.ExecAllocatorOption {
 		return nil
 	}
 
-	dir := config.Config.GetString("serverless.extension")
+	dir := config.Config.GetString("browser-less.extension")
 	if dir == "" {
 		dir = "/var/tmp/extension-plugins"
 	}
