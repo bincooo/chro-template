@@ -359,6 +359,13 @@ func evaluateStealth() chromedp.ActionFunc {
 	}
 }
 
+func evaluateHook() chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		_, err = page.AddScriptToEvaluateOnNewDocument(hookJs).Do(ctx)
+		return
+	}
+}
+
 func osUserAgent() string {
 	switch rt.GOOS {
 	case "linux":
