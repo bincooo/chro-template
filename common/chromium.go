@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"chro-template/config"
 	"chro-template/logger"
 	"chro-template/plugins"
 	"github.com/chromedp/cdproto/page"
@@ -58,7 +57,7 @@ func switchPlugin(expr string) []byte {
 	}
 }
 
-func InitChromium(ctx context.Context, proxies, userAgent, userDir string, plugins ...string) (context.Context, context.CancelFunc) {
+func InitChromium(ctx context.Context, proxies, userAgent, userDir string, config *viper.Viper, plugins ...string) (context.Context, context.CancelFunc) {
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
@@ -87,8 +86,7 @@ func InitChromium(ctx context.Context, proxies, userAgent, userDir string, plugi
 		opts = append(opts, chromedp.ProxyServer(proxies))
 	}
 
-	vip := config.Config
-	headless := vip.GetString("browser-less.headless")
+	headless := config.GetString("browser-less.headless")
 	if headless != "" {
 		// 设置为false，就是不使用无头模式
 		switch headless {
@@ -102,22 +100,22 @@ func InitChromium(ctx context.Context, proxies, userAgent, userDir string, plugi
 	}
 
 	// 关闭GPU加速
-	if vip.GetBool("browser-less.disabled-gpu") {
+	if config.GetBool("browser-less.disabled-gpu") {
 		opts = append(opts, chromedp.DisableGPU)
 	}
 
 	// 代理ip白名单
-	if list := vip.GetStringSlice(""); len(list) > 0 {
+	if list := config.GetStringSlice(""); len(list) > 0 {
 		opts = append(opts, chromedp.Flag("browser-less.proxy-bypass-list", strings.Join(list, ",")))
 	}
 
 	// 插件装载
 	if len(plugins) > 0 {
-		opts = append(opts, InitExtensions(vip, plugins...)...)
+		opts = append(opts, InitExtensions(config, plugins...)...)
 	}
 
 	// 浏览器启动路径
-	if p := vip.GetString("browser-less.execPath"); p != "" {
+	if p := config.GetString("browser-less.execPath"); p != "" {
 		opts = append(opts, chromedp.ExecPath(p))
 	}
 
