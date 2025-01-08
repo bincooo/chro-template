@@ -5,6 +5,6 @@ import (
 )
 
 func Examples(gtx *gin.Context) (err error) {
-
+	
 	return
 }

@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -313,12 +312,18 @@ func WithTimeout(timeout time.Duration, returnError bool, actions ...chromedp.Ac
 	}
 }
 
-func TryClickXY(ctx context.Context, selector string) (err error) {
+func ClickXY(selector string) chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		return clickXY(ctx, selector)
+	}
+}
+
+func clickXY(ctx context.Context, selector string) (err error) {
 	var (
 		rect map[string]interface{}
 	)
 
-	err = chromedp.Run(ctx, TaskLogger("try click xy..."),
+	err = chromedp.Run(ctx, TaskLogger("click xy..."),
 		chromedp.Evaluate(`{let {x,y} = document.querySelector("`+selector+`").getBoundingClientRect(); let a={x,y}; a;}`, &rect))
 	if err != nil {
 		logger.Error(err)
@@ -329,11 +334,11 @@ func TryClickXY(ctx context.Context, selector string) (err error) {
 	if err != nil {
 		logger.Error(err)
 	}
-
-	if err == nil {
-		err = errors.New("trying to click XY failed")
-	}
 	return
+}
+
+func WaitCLickXY(selector string, timeout time.Duration, actions ...chromedp.Action) chromedp.ActionFunc {
+	return WhileTimeout(timeout, 3*time.Second, true, append([]chromedp.Action{ClickXY(selector)}, actions...)...)
 }
 
 func Visible(selector string) chromedp.Tasks {
@@ -413,7 +418,7 @@ func EvaluateHookJS(hookJS string) chromedp.ActionFunc {
 func EvaluateCallbackManager(events ...string) chromedp.EvaluateAction {
 	content := ""
 	for _, event := range events {
-		content += fmt.Sprintf("\nwindow.CallbackManager.register('%s', (data) => { this.data['%s'] = data; });", event, event)
+		content += fmt.Sprintf("\nwindow.CallbackManager.register('%s', function(data) { this.data['%s'] = {ok: true, args: data}; });", event, event)
 	}
 	return chromedp.Evaluate(`
             // 创建一个回调管理器
@@ -431,21 +436,62 @@ func EvaluateCallbackManager(events ...string) chromedp.EvaluateAction {
                     }
                     throw new Error('event "' + id + '" not found');
                 },
-				callback(id) {
-					return this.data[id];
+				callback(id, timeout) {
+					return new Promise((resolve, inject) => {
+						if (timeout > 0) {
+							let inj = false;
+							setTimeout(() => { inj = true }, timeout);
+							let timer = setInterval(() => {
+								if (inj) {
+									inject(new Error('timeout'));
+									clearInterval(timer);
+									return;
+								}
+								if (window.CallbackManager.data[id]) {
+									const data = window.CallbackManager.data[id];
+									clearInterval(timer);
+									if (data.ok) {
+										resolve(data.args);
+									} else {
+										inject(new Error('not data'));
+									}
+								}
+							}, timeout);
+							return;
+						}
+
+						if (window.CallbackManager.data[id]?.ok) {
+							resolve(window.CallbackManager.data[id]?.args);
+							return;
+						}
+						inject(new Error('not data'));
+					});
 				}
             };
             // 注册一些示例回调`+content, nil)
 }
 
-func EvaluateCallback[T any](name string, args []interface{}, result T) chromedp.ActionFunc {
+func EvaluateCallback[T any](name string, timeout time.Duration, result T) chromedp.ActionFunc {
 	return func(ctx context.Context) error {
-		b, err := json.Marshal(args)
-		if err != nil {
-			return err
+		return chromedp.Evaluate(fmt.Sprintf("window.CallbackManager.callback('%s', %d)", name, timeout), &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			if timeout > 0 {
+				p = p.WithTimeout(runtime.TimeDelta(timeout))
+			}
+			return p.WithAwaitPromise(true)
+		}).Do(ctx)
+	}
+}
+
+func Assert(condition func() bool, messages ...string) chromedp.ActionFunc {
+	return func(ctx context.Context) (err error) {
+		if !condition() {
+			err = errors.New("assert condition is false")
+			message := strings.Join(messages, " ")
+			if message != "" {
+				err = errors.New(message)
+			}
 		}
-		return chromedp.Evaluate(fmt.Sprintf("window.CallbackManager.callback('%s', %s)", name, b), &result).
-			Do(ctx)
+		return
 	}
 }
 
